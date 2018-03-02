@@ -10,10 +10,11 @@
  */
 #define COLLISION_COST_WEIGHT       9999 //99999
 #define BUFFER_COST_WEIGHT          1000
-#define IN_LANE_BUFFER_COST_WEIGHT  3000 //90000
-#define EFFICIENCY_COST_WEIGHT      1000 //100
+#define IN_LANE_BUFFER_COST_WEIGHT  5000 //3000
+#define EFFICIENCY_COST_WEIGHT      1000 //1000
 #define NOT_MIDDLE_LANE_COST_WEIGHT 10 //10
-#define MAX_JERK_COST_WEIGHT        5555 //9999
+#define MAX_S_JERK_COST_WEIGHT      6000 //5555
+#define MAX_D_JERK_COST_WEIGHT      80 //40   //30
 
 vector<double> get_jerk_min_coeffs(vector<double>, vector <double>, double);
 

@@ -312,82 +312,6 @@ int main() {
             }
 
             /*
-             * build s, s_d and s_dd 
-             *       d, d_d and d_dd
-             * for the ego car      
-             */
-             float ego_s, ego_s_dot, ego_s_dot_dot;
-             float ego_d, ego_d_dot, ego_d_dot_dot;
-
-            /*
-             * update ego car's localization parameters 
-             */
-            //ego_car.update_localization(car_x, car_y, car_s, car_d, car_yaw,
-            //                            car_speed);
-
-            
-
-
-#if 0
-            bool too_close = false;
-            /*
-             * find ref_v to use
-             */
-            for (int i = 0; i < sensor_fusion.size(); i++) {
-                
-                /*
-                 * car is in my lane
-                 */
-                float d = sensor_fusion[i][6];
-                if (d < (2 + 4*lane + 2) && d > (2 + 4*lane -2)) {
-                    double vx = sensor_fusion[i][3];
-                    double vy = sensor_fusion[i][4];
-                    double check_speed = sqrt(vx*vx + vy*vy);
-                    double check_car_s = sensor_fusion[i][5];
-
-                    /*
-                     * if using previous ponts can projects s value out
-                     */
-                    check_car_s += ((double)prev_size * 0.02 * check_speed);
-
-                    /*
-                     * check s values greater than mine and s gap
-                     */
-                    if ((check_car_s > car_s) && (check_car_s - car_s) < 30 ) 
-                    {
-                        
-                        /*
-                         * Do some logic here, lower reference velocity so we
-                         * do not crash into the car
-                         * infront of us, could also flag to try to chnage lanes
-                         */
-                        //ref_vel = 29.5; //mph
-                        too_close = true;
-                        /*
-                        if (lane > 0) {
-                            lane = 0;
-                        }
-                        */
-                    }
-                }
-            }
-
-            if (too_close) {
-                ref_vel -= 0.224; //  5 m/s^2           
-            } else if (ref_vel < 49.5) {
-                ref_vel += 0.224;
-            }
-#endif
-            /*
-             * state measuring state machine
-             */
-            //vector<Vehicle> car  = ego_car.choose_next_state(sensor_fusion);
-
-            /*
-             * end of state machine
-             */
-
-            /*
              * Create a list of widely spaced (x,y) waypoints, evenly spaced at 30m
              * Later we will interpolate these waypoints with a spline and fill it in with
              * more points that control the speed.
@@ -422,17 +346,6 @@ int main() {
                 ptsy.push_back(prev_car_y);
                 ptsy.push_back(car_y);
 
-                /*
-                 * set  s, s_dot and s_dot_dot
-                 * same for d
-                 */
-                ego_s = car_s;
-                ego_s_dot = car_speed;
-                ego_s_dot_dot = 0.0;
-                ego_d = car_d;
-                ego_d_dot = 0.0;
-                ego_d_dot_dot = 0.0;
-
             } else {
                 
                 /*
@@ -462,46 +375,11 @@ int main() {
                 ptsy.push_back(ref_y_prev);
                 ptsy.push_back(ref_y);
 
-                /*
-                 * set s, s_dot, s_dot_dot and  d, d_dot, d_dot_dot
-                 */
-                vector<double> frenet_prev = getFrenet(ref_x_prev,
-                        ref_y_prev, ref_yaw, map_waypoints_x, map_waypoints_y);
-                vector<double> frenet_prev_prev = getFrenet(ref_x_prev_prev,
-                                ref_y_prev_prev, ref_yaw_prev, map_waypoints_x,
-                                map_waypoints_y);
-
-                /*
-                 * Predict non-ego vehicle for next 1 second, compare to
-                 * ego vehicle
-                 * 
-                 */
-                ego_s = car_s;
-                ego_s_dot = (car_s - frenet_prev[0])/TIME_BETWEEN_POINTS;
-                float ego_s_dot_prev = (frenet_prev[0] 
-                                     - frenet_prev_prev[0])/TIME_BETWEEN_POINTS;
-                ego_s_dot_dot = (ego_s_dot - ego_s_dot_prev)/TIME_BETWEEN_POINTS;
-
-                ego_d = car_d;
-                ego_d_dot = (car_d - frenet_prev[1])/TIME_BETWEEN_POINTS;
-                float ego_d_dot_prev = (frenet_prev[1] 
-                                     - frenet_prev_prev[1])/TIME_BETWEEN_POINTS;
-                ego_d_dot_dot = (ego_d_dot - ego_d_dot_prev)/TIME_BETWEEN_POINTS; 
             }
           
-            //cout<<"ego s:"<<ego_s<<" s_dot:"<<ego_s_dot<<" s_dot_dot:";
-            //cout<<ego_s_dot_dot<<endl;
-
-            //cout<<"ego d:"<<ego_d<<" d_dot:"<<ego_d_dot<<" d_dot_dot:";
-            //cout<<ego_d_dot_dot<<endl;
-#if 0
-            ego_car.set_trajectory_param(ego_s, ego_s_dot, ego_s_dot_dot,
-                                         ego_d, ego_d_dot, ego_d_dot_dot);
-#else
             ego_car.tj.s = car_s;
             //ego_car.tj.s_dot_dot = ego_s_dot_dot;
             //ego_car.tj.d_dot_dot = ego_d_dot_dot;
-#endif
              
             /*
              * set the longitudinal velocity
@@ -581,21 +459,7 @@ int main() {
                     best_ref_velocity = best_end_state[0][1];
 
                     ref_vel = best_ref_velocity;
-                    //ego_car.tj.s_dot = ref_vel;
-                    cout<<"best velocity "<< best_ref_velocity <<" ref velocity "<<ref_vel<<endl;
-                    
-                    /*
-                    if (ref_vel < 49) {
-                        ref_vel += 0.224; //best_ref_velocity;
-                    } else {
-
-                        //cout<< "==>> velocity change from: "<< ref_vel <<" to: ";
-                        //cout<< best_ref_velocity <<endl;
-                        ref_vel -= 0.224;
-                        cout<<"ref velocity "<<ref_vel<<endl;
-                    }
-                    */
-                    //car_s = best_end_state[0][0];
+                    //cout<<"best velocity "<< best_ref_velocity <<" ref velocity "<<ref_vel<<endl; 
                     ego_car.state = states[i];
                 }
             } // for each state i.e. KL. LCL etc.
@@ -603,10 +467,17 @@ int main() {
                 cout<< "==>> A Lane change from: "<< lane << " to: "<<best_lane;
                 cout<<" is suggested"<<endl;
                 lane = best_lane;
-                //ego_car.tj.d = lane; 
-                //car_s = best_end_state[0][0];
             }
 
+            vector<double> next_x_vals;
+          	vector<double> next_y_vals;
+            
+            if (ref_vel <= 0) {
+                cout << "APPLYING EMERGENCY BRAKE 3..2..1 !"<<endl;
+                next_x_vals = {car_x};
+                next_y_vals = {car_y};
+            
+            } else {
 
             /*
              * In Frenet add evenly 30m spaced points ahead of the starting
@@ -654,8 +525,8 @@ int main() {
              */
             s.set_points(ptsx, ptsy);
 
-            vector<double> next_x_vals;
-          	vector<double> next_y_vals;
+//            vector<double> next_x_vals;
+//          	vector<double> next_y_vals;
  
             /*
              * Start with all of the previous path points from the last time
@@ -712,7 +583,7 @@ int main() {
 
             }
 
-
+        } // breake
             /*
              * define a path made up of (x,y) points that the car will
              * visit sequentially every .02 seconds

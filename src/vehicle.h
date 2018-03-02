@@ -74,28 +74,17 @@ public:
      */
     virtual ~Vehicle();
 
-    vector<Vehicle> choose_next_state(vector<vector<float>> predictions);
     vector<car_state_e> successor_states();
     vector<Vehicle> generate_trajectory(car_state_e state, 
                                         vector<vector<float>> predictions);
 
-    vector<float> get_kinematics(vector<vector<float>>, int);
-    vector<Vehicle> constant_speed_trajectory();
-    vector<Vehicle> keep_lane_trajectory(vector<vector<float>> predictions);
-    vector<Vehicle> lane_change_trajectory(car_state_e state,
-                                          vector<vector<float>>predictions);
-    vector<Vehicle> prep_lane_change_trajectory(car_state_e state, 
-                                           vector<vector<float>> predictions);
     void increment(int dt);
-    float position_at(int t);
+    float position_at (long, float);
     void detect_closest_vehicle (const vector<Vehicle> &);
-    bool get_vehicle_ahead(vector<vector<float>>, int, Vehicle&);
-    bool get_vehicle_behind(vector<vector<float>>, int, Vehicle&);
     vector<Vehicle> generate_predictions(int horizon=2);
     void realize_next_state(vector<Vehicle> trajectory);
     int get_lane(float);
     void configure(float, int, int, float, car_state_e, float, int);
-    void update_localization(float, float, float, float, float, float);
     void set_trajectory_param(float, float, float, float, float, float);
     vector<vector<double>> get_predictions (int, int);
     vector<vector<double>> get_predicted_end_states (car_state_e, int,
