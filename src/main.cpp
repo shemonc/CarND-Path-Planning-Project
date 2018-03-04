@@ -167,16 +167,17 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
 	return {x,y};
 
 }
-#if 1
+
     /*
-     * mph
+     * Starting reference velocity mph
      */
-    volatile double ref_vel = 0.0;
+    double ref_vel = 0.0;
+
     /*
-     * start in lane 1
+     * starting lane
      */
     int lane = 1;
-#endif
+
 
 /*
  * get_nonego_cars_predictions
@@ -324,7 +325,8 @@ int main() {
             /*
              * Create a list of widely spaced (x,y) waypoints, evenly spaced at
              * 30m Later we will interpolate these waypoints with a spline and
-             * fill it in with more points that control the speed.
+             * fill it in with more points that control the speed of the ego
+             * vehicle
              */
             vector<double> ptsx;
             vector<double> ptsy;
@@ -576,6 +578,11 @@ int main() {
           	ptsy.push_back(next_wp1[1]);
           	ptsy.push_back(next_wp2[1]);
 
+            /*
+             * Convert the axis from map-coordinate to car-coordinate. We are
+             * looking from the car front windshield, making things easy
+             * for calculation
+             */
             for (int i = 0; i < ptsx.size(); i++) {
                 
                 /*
@@ -628,7 +635,7 @@ int main() {
              *
              * 50 mph = 80000/3600 = 22.2 m/s
              *
-             * =>1 m/s = 50/22.2 = 2.25 MPH
+             * =>1 m/s = 50/22.2 = 2.24 MPH
              */
             for (int i = 1; i <= 50 - previous_path_x.size(); i++) {
                 
@@ -641,13 +648,18 @@ int main() {
                 double y_ref = y_point;
 
                 /*
-                 * rotate back to normal after rotating it earlier
+                 * rotate back to map coordinate after rotating it earlier to
+                 * car coordinate for each of this generated poin, as we will
+                 * pass these points to simulated in map-coordinate to draw 
+                 * the car in time.
+                 *
+                 * rotate first
                  */
                 x_point = (x_ref * cos(ref_yaw) - y_ref * sin(ref_yaw));
                 y_point = (x_ref * sin(ref_yaw) + y_ref * cos(ref_yaw));
                 
                 /*
-                 * shift
+                 * then shift
                  */
                 x_point += ref_x;
                 y_point += ref_y;
