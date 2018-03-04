@@ -4,22 +4,16 @@
 
 using namespace std;
 
-float calculate_cost(const Vehicle &, const vector<vector<float>> &,
-                     const vector<Vehicle> &);
-
-float goal_distance_cost(const Vehicle &,  const vector<Vehicle> &,
-                         const vector<vector<float>> &,
-                         map<string, float> & data);
-
-float inefficiency_cost(const Vehicle &, const vector<Vehicle> &,
-                        const vector<vector<float>> &,
-                        map<string, float> & data);
-
-float lane_speed(const vector<vector<float>> &, int);
-
-map<string, float> get_helper_data(const Vehicle &,
-                                   const vector<Vehicle> &,
-                                   const vector<vector<float>> &);
+/*
+ * Cost related weights
+ */
+#define COLLISION_COST_WEIGHT       50000 //99999 //9999
+#define BUFFER_COST_WEIGHT          1000
+#define IN_LANE_BUFFER_COST_WEIGHT  5000 //3000
+#define EFFICIENCY_COST_WEIGHT      1000 //1000
+#define NOT_MIDDLE_LANE_COST_WEIGHT 10 //10
+#define MAX_S_JERK_COST_WEIGHT      110 //150 //100 //6500 //6000
+#define MAX_D_JERK_COST_WEIGHT      200 //250 //150 //80
 
 double calculate_all_cost(vector<double> const &, vector<double> const &,
                           map<int, vector<vector<double>>> const &);

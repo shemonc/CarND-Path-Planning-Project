@@ -17,19 +17,6 @@ Vehicle::Vehicle ()
 }
 
 /*
- * Vehicle
- */
-Vehicle::Vehicle (int lane, float s, float v, float a, car_state_e state)
-{
-    this->lane = lane;
-    this->tj.s = s;
-    this->speed = v;
-    this->a = a;
-    this->state = state;
-    max_acceleration = -1;
-}
-
-/*
  * ~Vehicle() 
  *
  *  Destructor
@@ -39,9 +26,8 @@ Vehicle::~Vehicle() {}
 /*
  * detect_closest_vehicle
  *
- * Returns true if a vehicle is found on left of the current vehicle,
- * false otherwise. The passed reference rVehicle is updated if a vehicle
- * is found.
+ * detect the vehicles close by ego vehicle and put them in
+ * @in[non_egos] vector of vehicles
  */
 void
 Vehicle::detect_closest_vehicle (const vector<Vehicle> &non_egos)
@@ -49,7 +35,10 @@ Vehicle::detect_closest_vehicle (const vector<Vehicle> &non_egos)
 
     float max_s = -1.0;
     float min_s = this->goal_s;
-    
+
+    /*
+     * reset any previous statets 
+     */
     this->nego.left = false;
     this->nego.right = false;
     this->nego.ahead = false;
@@ -61,25 +50,45 @@ Vehicle::detect_closest_vehicle (const vector<Vehicle> &non_egos)
          * find if this neighbour is the closet vehicle ahead of us.
          */
         float s_diff = non_egos[i].tj.s - this->tj.s;
-        if (fabs(s_diff) <= SAFTY_DISTANCE) {
+        if (fabs(s_diff) <= TRAJECTORY_DISTANCE) {
             float d_diff = non_egos[i].tj.d - this->tj.d;
-            if (d_diff > 2 && d_diff < (2 + 4)) {
+
+            /*
+             * A vehicle is on right
+             */
+            if (d_diff > DESIRED_LANE_POSITION && 
+                    d_diff < (DESIRED_LANE_POSITION + LANE_WIDTH)) {
                 this->nego.right = true;
                 //cout<<"A Vehicle on RIGHT"<<endl;
             }
-            if (d_diff < -2 && d_diff > - (2 + 4)) {
+
+            /*
+             * A vehicle on left
+             */
+            if (d_diff < -DESIRED_LANE_POSITION && 
+                     d_diff > - (DESIRED_LANE_POSITION + LANE_WIDTH)) {
                 this->nego.left = true;
                 //cout<<"A Vehicle on LEFT"<<endl;
             }
-            if (d_diff < 2 && d_diff > -2) {
+
+            /*
+             * In lane vehicle either in front or in back
+             */
+            if (d_diff < DESIRED_LANE_POSITION && 
+                                    d_diff > -DESIRED_LANE_POSITION) {
                 
+                /*
+                 * a vehicle in front
+                 */
                 if (s_diff > 0 && non_egos[i].tj.s < min_s) {
                     min_s = non_egos[i].tj.s;
                     this->nego.ahead = true;
                     //cout<<"A Vehicle Ahead"<<endl;
-
                 }
-
+                
+                /*
+                 * a vehicle in back
+                 */
                 if (s_diff < 0 && non_egos[i].tj.s > max_s) {
                     max_s = non_egos[i].tj.s;
                     this->nego.behind = true;
@@ -94,8 +103,8 @@ Vehicle::detect_closest_vehicle (const vector<Vehicle> &non_egos)
  * successor_states
  *
  * Provides the possible next states given the current state for the FSM
- * discussed in the course, with the exception that lane changes happen
- * instantaneously, so LCL and LCR can only transition back to KL.
+ * with the exception that lane changes happen instantaneously, so LCL 
+ * and LCR can only transition back to KL.
  */
 vector<car_state_e> 
 Vehicle::successor_states() 
@@ -104,10 +113,10 @@ Vehicle::successor_states()
     states.push_back(KL);
     car_state_e state = this->state;
     
-    if (this->tj.d > 4 && nego.left == false ) {
+    if (this->tj.d > LANE_WIDTH && nego.left == false ) {
             states.push_back(LCL);
     }
-    if (this->tj.d < 8 && nego.right == false) {
+    if (this->tj.d < 2*LANE_WIDTH && nego.right == false) {
             states.push_back(LCR);
     }
     
@@ -119,13 +128,16 @@ Vehicle::successor_states()
 
 /*
  * get_target_lane
- *
+ * 
+ * Translate state into lane number.
+ * i.e. if currently on lan 0 and state is LCR,
+ * target lane will be 1 ect.
  */
 int 
 Vehicle::get_target_lane (car_state_e state)
 {
     int target_lane;
-    int current_lane = this->tj.d/4;
+    int current_lane = this->tj.d/LANE_WIDTH;
 
     switch (state) {
         case KL:
@@ -157,7 +169,7 @@ Vehicle::get_inlane_vehicle_end_states (const int lane,
         
         vector<vector<double>> predict_states = it->second;
         float predicted_d = predict_states[0][2];
-        int   predicted_lane = predicted_d/4;
+        int   predicted_lane = predicted_d/LANE_WIDTH;
         
         if (predicted_lane == lane) {
             
@@ -179,6 +191,17 @@ Vehicle::get_inlane_vehicle_end_states (const int lane,
     return {closest_end_s, closest_end_velocity};
 }
 
+/*
+ * get_predicted_end_states
+ *
+ * Given multiple states and intended_lane find the predicted end states
+ * of the vehicle object(ego) after the given duration 
+ *
+ * @[in] state: KL, LCR, LCL, etc.
+ * @[in] target_lane: intended lane for the given state
+ * @[in] predictions: predictions of end states of other vehicle
+ * @[in] duration: end states after this time
+ */
 vector<vector<double>>
 Vehicle::get_predicted_end_states (car_state_e state, int target_lane,
                                    map<int, vector<vector<double>>> &predictions)
@@ -189,16 +212,14 @@ Vehicle::get_predicted_end_states (car_state_e state, int target_lane,
     float         s_diff;
 
     long duration = N_SAMPLES*TIME_BETWEEN_POINTS;
-    float target_d = (float)target_lane*4 + 2;
+    float target_d = (float)target_lane*LANE_WIDTH + DESIRED_LANE_POSITION;
  
     end_sdd = 0;
-    end_sd = min(this->tj.s_dot + 0.224, SPEED_LIMIT); // need to be in meter instead 
-                                                   // mile per hour ??
-    //end_s = this->tj.s + ((this->tj.s_dot + end_sd)/2)* duration;
+    end_sd = min(this->tj.s_dot + 0.224, SPEED_LIMIT); // mph
     
     end_s = position_at(duration, end_sd);
 
-    end_d = (float)target_lane*4 + 2;
+    end_d = (float)target_lane*LANE_WIDTH + DESIRED_LANE_POSITION;
     end_dd = 0;
     end_ddd = 0;
     
@@ -208,25 +229,36 @@ Vehicle::get_predicted_end_states (car_state_e state, int target_lane,
     if (car_in_front_s != -1.0 && car_in_front_velocity != -1.0) {
         
         s_diff = car_in_front_s - end_s;
-        if (s_diff < SAFTY_DISTANCE) {
+        if (s_diff < TRAJECTORY_DISTANCE) {
             
             end_sd -= 0.224*2 ; //car_in_front_velocity;
-            //end_s = this->tj.s + ((this->tj.s_dot + end_sd)/2)* duration;
             end_s = position_at(duration, end_sd);
 
         }
         
+        /*
+         * re-evaluate the distance again to make sure
+         * front vehicle is not with in safety distance
+         */
         s_diff = car_in_front_s - end_s;
-        if (s_diff < 0.3* SAFTY_DISTANCE) {
+        if (s_diff < SAFETY_DISTANCE) {
         
             /*
              * too close, slow down
              */
-            cout<< __func__ <<" Vehicle ahead too close !!"<<endl;
+            cout<<" Vehicle ahead too close !"<<endl;
             //end_sd -= 0.224;
-            end_sd = car_in_front_velocity;
-            //end_s = this->tj.s + ((this->tj.s_dot + end_sd)/2)* duration;
+            emergency_stop += 1;
+            if (emergency_stop > 1) {
+                end_sd = 0;
+                cout << " Emergency Stop is requested"<<endl;
+            } else {
+                end_sd = car_in_front_velocity;
+            }
+
             end_s = position_at(duration, end_sd);
+        } else {
+            emergency_stop = 0;
         }
     }
 
@@ -242,6 +274,23 @@ Vehicle::get_predicted_end_states (car_state_e state, int target_lane,
     return {{end_s, end_sd, end_sdd}, {end_d, end_dd, end_ddd}};
 }
 
+/*
+ * Generate_trajectory_based_on_prediction
+ *
+ *  A polynomial solver.
+ *  Given - Start state[s,sd,sdd] 
+ *        - End states[sf, sdf, sddf] and 
+ *        - time, T 
+ *   Generate A jerk minized trajectory
+ *
+ *   @[in] end_states: vectors of end states[sf, sdf, sddf]
+ *   @[in] Time T:
+ *   @[out] {{a0_s, a1_s, a2_s, a3_s, a4_s, a5_s},
+ *                                  {a0_d, a1_d, a2_d, a3_d, a4_d, a5_d}}
+ *
+ *    Return vectors of longitudinal and lateral jerk minimized coefficients
+ *    as in stated above in [out] parameter
+ */
 vector<vector<double>>
 Vehicle::generate_trajectory_based_on_prediction (
                                 const vector<vector<double>> &end_states,
@@ -287,26 +336,10 @@ Vehicle::generate_trajectory_based_on_prediction (
 }
 
 /*
- * get_lane
- *
- */
-int
-Vehicle::get_lane (float d)
-{
-    for (int i = 0; i < TOTAL_LANE_IN_SAME_SIDE; i++) {
-        
-        if (d >= i*EACH_LANE_WIDTH && d <= (i+1)*EACH_LANE_WIDTH ) {
-            return i;
-        }
-    }
-
-    cout<<"d: "<<d<<" Lane Not FOUND"<<endl;
-    return -1;
-}
-
-/*
  * position_at
- *
+ * 
+ * Calculate the avg position of a given vehicle after the @duration
+ * and @end_velocity of this vehicle
  */
 float
 Vehicle::position_at (long duration, float end_velocity)
@@ -320,13 +353,13 @@ Vehicle::position_at (long duration, float end_velocity)
  * Set the Initial configuration of a vehicle
  */
 void 
-Vehicle::configure(float target_speed, int lane, int goal_lane,
+Vehicle::configure(float target_speed, int lane, int first_pass,
                    float max_accel, car_state_e state, float distance_to_goal,
                    int available_lane)
 {
     this->target_speed = target_speed;
     this->lane = lane;
-    this->goal_lane = goal_lane;
+    this->first_pass = first_pass;
     max_acceleration = max_accel;
     this->state = state;
     this->lanes_available = available_lane;
@@ -344,6 +377,15 @@ Vehicle::set_trajectory_param(float s, float s_d, float s_dd,
     this->tj.d_dot = d_d;
     this->tj.d_dot_dot = d_dd;
 }
+
+/* get_predictions
+ *
+ * Generate Trajectories for a duration of @num_of_points starting from
+ * time elapsed of the @prev_points for a given vehicle.
+ *
+ * @[out] The prediction of the final state {s, s_dot, d, d_dot} of a given
+ *        vehicle at each points
+ */
 
 vector<vector<double>>
 Vehicle::get_predictions (int prev_points, int num_of_future_points)

@@ -8,11 +8,6 @@
 
 using namespace std;
 
-#define TOTAL_LANE_IN_SAME_SIDE         3
-#define EACH_LANE_WIDTH                 4 // meter
-#define MAX_SPEED_LIMIT                 50 // MPH
-#define MAX_ACCELERATION                10 // m/s^2
-
 typedef enum car_state {
     CS=0,               // Constant speed
     KL,                 // Keep Lane
@@ -45,29 +40,27 @@ public:
                             {{PLCL, -1}, {LCL, -1}, {LCR, 1}, {PLCR, 1}};
 
     int             vehicle_id;
-    int             preferred_buffer = 20; // impacts "keep lane" behavior.
     int             lane;
     trajectory_t    tj;
     float           a = 0.224;
     float           target_speed;
     int             lanes_available;
     float           max_acceleration;
-    int             goal_lane;
+    int             first_pass;
     float           goal_s;
     car_state_e     state;
     car_detected_t  nego;
     float           x;
     float           y;
     float           yaw;
-    float           speed;
     vector<double>  s_traj_coeffs;
     vector<double>  d_traj_coeffs;
+    long            emergency_stop;
 
     /*
      * Constructor
      */
     Vehicle();
-    Vehicle(int lane, float s, float v, float a, car_state_e);
     
     /*
      * Destructor
@@ -83,12 +76,11 @@ public:
     void detect_closest_vehicle (const vector<Vehicle> &);
     vector<Vehicle> generate_predictions(int horizon=2);
     void realize_next_state(vector<Vehicle> trajectory);
-    int get_lane(float);
     void configure(float, int, int, float, car_state_e, float, int);
     void set_trajectory_param(float, float, float, float, float, float);
     vector<vector<double>> get_predictions (int, int);
     vector<vector<double>> get_predicted_end_states (car_state_e, int,
-                                       map<int, vector<vector<double>>> &);
+                                    map<int, vector<vector<double>>> &);
     vector<float> get_inlane_vehicle_end_states (const int,
                                         map<int, vector<vector<double>>> &);
     int get_target_lane(car_state_e);

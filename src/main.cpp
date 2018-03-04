@@ -179,9 +179,17 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
 #endif
 
 /*
- * generate_predictions
+ * get_nonego_cars_predictions
  *
+ * Generate Trajectories for a duration of @num_of_points starting from
+ * time elapsed of the @prev_points
+ * Store this predictions into a hash bucket.
  *
+ * @[in]sf, senson fusion data for the vehicles
+ * @[in]car, vector of cars who's trajectory prediction will be calculated
+ * @[in]pred, a hash of predictions where key is the car id and value is
+ *      the prediction of the final sate {s, s_dot, d, d_dot} of the car
+ *      at each point.
  */
 void 
 get_nonego_cars_predictions (vector<vector<double>> sf, vector<Vehicle> &car,
@@ -211,9 +219,9 @@ int main() {
     /*
      * init the ego vehicle
      */
-    float       target_speed = 49.5;
+    float       target_speed = SPEED_LIMIT ;
     int         init_lane = 1;
-    int         goal_lane = 1;
+    int         first_pass = 0;
     float       max_acceleration = 2 /* MAX_ACCELERATION */ ;
     car_state_e initial_state = CS; 
     float       distance_to_goal = 6945.554;
@@ -222,8 +230,9 @@ int main() {
     /*
      * configure the ego vehicle with initial data
      */
-     ego_car.configure(target_speed, init_lane, goal_lane, max_acceleration,
+     ego_car.configure(target_speed, init_lane, first_pass, max_acceleration,
                        initial_state, distance_to_goal, available_lane);
+     ego_car.emergency_stop = 0;
 
   // Load up map values for waypoint's x,y,s and d normalized normal vectors
   vector<double> map_waypoints_x;
@@ -300,9 +309,10 @@ int main() {
           	// Sensor Fusion Data, a list of all other cars on the same side of the road.
           	auto sensor_fusion = j[1]["sensor_fusion"];
                           
-          	json msgJson;
-            
-
+          	json    msgJson;
+            double  prev_car_x;
+            double  prev_car_y;
+ 
            
             int prev_size = previous_path_x.size();
            
@@ -312,9 +322,9 @@ int main() {
             }
 
             /*
-             * Create a list of widely spaced (x,y) waypoints, evenly spaced at 30m
-             * Later we will interpolate these waypoints with a spline and fill it in with
-             * more points that control the speed.
+             * Create a list of widely spaced (x,y) waypoints, evenly spaced at
+             * 30m Later we will interpolate these waypoints with a spline and
+             * fill it in with more points that control the speed.
              */
             vector<double> ptsx;
             vector<double> ptsy;
@@ -331,14 +341,13 @@ int main() {
             /*
              * if previous size is almost empty, use the car as starting reference
              */
-            //cout << "prev_size " << prev_size <<endl;
-            if (prev_size < 3 ) {
+            if (prev_size < 2 ) {
 
                 /*
                  * Use two points that make the path tangent to the car
                  */
-                double prev_car_x = car_x - cos(ref_yaw); //car_yaw  should be ref_yaw
-                double prev_car_y = car_y - sin(ref_yaw);
+                prev_car_x = car_x - cos(ref_yaw);
+                prev_car_y = car_y - sin(ref_yaw);
                 
                 ptsx.push_back(prev_car_x);
                 ptsx.push_back(car_x);
@@ -362,10 +371,6 @@ int main() {
                 double ref_y_prev = previous_path_y[prev_size - 2];
                 ref_yaw = atan2(ref_y - ref_y_prev, ref_x - ref_x_prev);
                
-                double ref_x_prev_prev = previous_path_x[prev_size - 3];
-                double ref_y_prev_prev = previous_path_y[prev_size - 3];
-                double ref_yaw_prev = atan2(ref_y_prev - ref_y_prev_prev, 
-                                            ref_x_prev - ref_x_prev_prev);
                 /*
                  * Use two points that make the path tangent to the previous
                  * path's end point
@@ -376,10 +381,11 @@ int main() {
                 ptsy.push_back(ref_y);
 
             }
-          
+
+            /*
+             * set ego's position
+             */
             ego_car.tj.s = car_s;
-            //ego_car.tj.s_dot_dot = ego_s_dot_dot;
-            //ego_car.tj.d_dot_dot = ego_d_dot_dot;
              
             /*
              * set the longitudinal velocity
@@ -392,21 +398,32 @@ int main() {
             ego_car.tj.d = lane*4 + 2;
 
             /*
-             * Generate predictions of other cars using sensor fusion data
+             * Generate predictions of other cars(non-ego) using sensor fusion
+             * data
              */
             vector<Vehicle> non_egos;
             map<int, vector<vector<double>>> non_egos_prediction;
 
             /*
-             * Create a prediction of non-ego vehicles for
-             * 25*0.02 = 0.5 seconds
+             * 1.
+             * Create 25 predictions of non-ego vehicles for
+             * 25*0.02 = 0.5 second
+             *
+             * This predicted data will be used to generate possible
+             * jerk minimized trajectories for this ego vehicle and a number
+             * of cost functions will be engaged to find the best optimal path
+             * for a given future duration. From this best path take the
+             * calculated reference velocity and intended lane and feed in to 
+             * spline to derive 50 points of the desired trajectory polynomial
+             * for this ego to travel
              */
             get_nonego_cars_predictions(sensor_fusion, non_egos,
-                                            non_egos_prediction, prev_size);
+                                        non_egos_prediction, prev_size);
             
             /*
-             * Deleted the closes left, right, front & back vehicle
-             * and set the flags
+             * 2.
+             * Detect the closest left, right, front and the vehicle
+             * on the back
              */
             ego_car.detect_closest_vehicle(non_egos);
             
@@ -416,24 +433,59 @@ int main() {
             double                  min_cost = 999999;
             car_state_e             best_state;
             vector<vector<double>>  best_traj, best_end_state;
-            
+            long                    time_in_future;
+
             /*
-             * Get the possible future states based on the
-             * surrounding vehicle detections
+             * 3.
+             * Get the possible future states such as KEEP_LANE,
+             * LANE_CHANGE_LEFT, RIGHT etc based on the surrounding
+             * vehicle detections
              */
             vector<car_state_e> states = ego_car.successor_states();
-            
-            /*
+
+            /* 
+             * 4. 
+             * Given multiple states and intended_lane find the end states
+             *    of ego.
              * Get end states (s_f, s_f_d, s_f_dd, d_f, d_f_d, d_f_dd)
              */
+            time_in_future = N_SAMPLES*TIME_BETWEEN_POINTS; 
             for (int i = 0; i < states.size(); i++) {
+
+                /*
+                 * 5.
+                 * get the intended lane based on a possible state
+                 */
                 intended_lane = ego_car.get_target_lane(states[i]);
- 
+                
+                /*
+                 * 6. 
+                 * find the predicted
+                 *  end states (s_f, s_f_d, s_f_dd, d_f, d_f_d, d_f_dd)
+                 *  of ego vehicle at time, time_in_future
+                 */
                 vector<vector<double>> ego_predicted_final_states = 
                                     ego_car.get_predicted_end_states(states[i],
                                                           intended_lane,
                                                           non_egos_prediction);
-                
+               /*
+                * 7.
+                * Now that we know the 
+                *   i)   start states
+                *   ii)  end states  and
+                *   iii) time
+                *   Calculate a jerk minimize trajectory.All the time derivatives
+                *   of S are further 6 or more have to be zero inorder for S
+                *   to be jerk minimal.
+                *
+                * s(t) = a_0 + a_1 * t + a_2 * t**2 + 
+                *                                a_3 * t**3 + a_4 * t**4 + a_5 * t**5
+                * d(t) = a_0 + a_1 * t + a_2 * t**2 + 
+                *                                a_3 * t**3 + a_4 * t**4 + a_5 * t**5
+                *
+                * - 5th order polynomial
+                * - 6 Coefficients i.e. 6 tunable parameters
+                */
                 vector<double> ego_longitudinal_traj;
                 vector<double> ego_lateral_traj;
                 vector<vector<double>> trajectories = 
@@ -442,12 +494,18 @@ int main() {
                               N_SAMPLES*TIME_BETWEEN_POINTS);
             
                 /*
-                 * predicted trajectory of eg for the duration of 
-                 * N_SAMPLE*0.02 = 0.5 second
+                 * Predicted jerk minimized trajectory of ego for the duration
+                 * of N_SAMPLE*0.02 = 0.5 second
                  */
                 ego_longitudinal_traj = trajectories[0];
                 ego_lateral_traj = trajectories[1];
-             
+            
+                /*
+                 * 8. Justify this trajectory using the cost functions bellow
+                 *    to see if this is the minimal cost trajectory among the
+                 *    generated one based on possible states
+                 *
+                 */
                 double this_trajectory_cost = 
                     calculate_all_cost(ego_longitudinal_traj, ego_lateral_traj,
                                        non_egos_prediction);
@@ -458,25 +516,45 @@ int main() {
                     best_lane = best_end_state[1][0]/4; //intended_lane;
                     best_ref_velocity = best_end_state[0][1];
 
-                    ref_vel = best_ref_velocity;
-                    //cout<<"best velocity "<< best_ref_velocity <<" ref velocity "<<ref_vel<<endl; 
+                    ref_vel = best_ref_velocity; 
                     ego_car.state = states[i];
                 }
+
             } // for each state i.e. KL. LCL etc.
+
+
             if (best_lane >= 0 && best_lane < 3 && best_lane != lane ) {
                 cout<< "==>> A Lane change from: "<< lane << " to: "<<best_lane;
                 cout<<" is suggested"<<endl;
-                lane = best_lane;
+
+                if (car_s > 200 || ego_car.first_pass > 0) {
+                    lane = best_lane;
+                    ego_car.first_pass = 1;
+                } else {
+                   
+                    /*
+                     * keep current lane
+                     */
+                    ego_car.state = CS;
+                    
+                    /*
+                     * we just started, stay on same lane for few meters
+                     */
+                    cout << "staying in same lane for next "<< (200 - car_s);
+                    cout << " meter to avoid any collision until the car ";
+                    cout << " gearup the desired speed"<<endl;
+                }
             }
 
             vector<double> next_x_vals;
-          	vector<double> next_y_vals;
-            
-            if (ref_vel <= 0) {
-                cout << "APPLYING EMERGENCY BRAKE 3..2..1 !"<<endl;
-                next_x_vals = {car_x};
-                next_y_vals = {car_y};
-            
+            vector<double> next_y_vals;
+ 
+            if (ref_vel == 0.0) {
+                cout<< "Holding Emergency Break! Ignore Jerk"<<endl;
+                //next_x_vals.push_back(prev_car_x);
+                next_x_vals.push_back(0);
+                //next_y_vals.push_back(prev_car_y);
+                next_y_vals.push_back(0);
             } else {
 
             /*
@@ -524,9 +602,6 @@ int main() {
              * set (x,y ) points to the spline
              */
             s.set_points(ptsx, ptsy);
-
-//            vector<double> next_x_vals;
-//          	vector<double> next_y_vals;
  
             /*
              * Start with all of the previous path points from the last time
@@ -557,7 +632,7 @@ int main() {
              */
             for (int i = 1; i <= 50 - previous_path_x.size(); i++) {
                 
-                double N = (target_dist/(0.02*ref_vel/2.24)); // m/s*m/s * h/m ??
+                double N = (target_dist/(0.02*ref_vel/2.24));
                 double x_point = x_add_on + target_x/N;
                 double y_point = s(x_point);
                 x_add_on = x_point;
@@ -583,7 +658,8 @@ int main() {
 
             }
 
-        } // breake
+            } // end of brake
+
             /*
              * define a path made up of (x,y) points that the car will
              * visit sequentially every .02 seconds

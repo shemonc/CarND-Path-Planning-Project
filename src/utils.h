@@ -3,18 +3,12 @@
 #define MAX_ACCEL              10      // m/s/s
 #define SPEED_LIMIT            49.9    // MPH
 #define TIME_BETWEEN_POINTS    0.02    // time between 2 points
-#define SAFTY_DISTANCE         30      // 2+4+2 max lateral distance from a car
+#define TRAJECTORY_DISTANCE    30      // meter spline will generate the trajectory 
+#define SAFETY_DISTANCE        0.3*TRAJECTORY_DISTANCE // vehicle too close
 #define VEHICLE_RADIUS         1.25    // meter 
-/*
- * Cost related weights
- */
-#define COLLISION_COST_WEIGHT       9999 //99999
-#define BUFFER_COST_WEIGHT          1000
-#define IN_LANE_BUFFER_COST_WEIGHT  5000 //3000
-#define EFFICIENCY_COST_WEIGHT      1000 //1000
-#define NOT_MIDDLE_LANE_COST_WEIGHT 10 //10
-#define MAX_S_JERK_COST_WEIGHT      6000 //5555
-#define MAX_D_JERK_COST_WEIGHT      80 //40   //30
+#define LANE_WIDTH             4
+#define DESIRED_LANE_POSITION  2
+
 
 vector<double> get_jerk_min_coeffs(vector<double>, vector <double>, double);
 

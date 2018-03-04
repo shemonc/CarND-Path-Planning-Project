@@ -58,6 +58,10 @@ nearest_approach_to_any_vehicle (vector<double> const &s_traj,
   return closest;
 }
 
+/*
+ * collision_cost
+ *
+ */
 double
 collision_cost (vector<double> const &s_traj, vector<double> const &d_traj,
                 map<int,vector<vector<double>>> const &predictions)
@@ -138,21 +142,23 @@ not_middle_lane_cost (vector<double> d_traj)
   return logistic(pow(end_d-6, 2));
 }
 
-vector<double> 
+/*
+ * differentiate
+ *
+ * Given a trajectory (a vector of positions), return the average velocity
+ * between each pair as a vector. This will be used to find accelerations
+ * from velocities, jerks from accelerations, etc. (i.e. discrete derivatives)
+ *
+ * Assumption: distance between 2 points takes exactly 0.02 second.
+ */
+vector<double>
 differentiate (vector<double> traj)
 {
-    /*
-     * Given a trajectory (a vector of positions), return the
-     * average velocity between each pair as a vector.
-     *
-     * Also can be used to find accelerations from velocities, 
-     * jerks from accelerations, etc. (i.e. discrete derivatives)
-     */
-  vector<double> velocities;
+  vector<double> time_derivatives;
   for (int i = 1; i < traj.size(); i++) {
-    velocities.push_back((traj[i] - traj[i-1]) / TIME_BETWEEN_POINTS);
+    time_derivatives.push_back((traj[i] - traj[i-1]) / TIME_BETWEEN_POINTS);
   }
-  return velocities;
+  return time_derivatives;
 }
 
 double
@@ -177,7 +183,7 @@ max_jerk_cost (vector<double> trajectory)
 {
   
     /*
-     * Penalize exceeding MAX_INSTANTANEOUS_JERK
+     * Penalize exceeding MAX_JERKS
      */
     vector<double> s_velocity = differentiate(trajectory);
     vector<double> s_acceleration = differentiate(s_velocity);
