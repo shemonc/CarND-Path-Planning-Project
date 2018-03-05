@@ -10,9 +10,9 @@ In this project the goal is to safely navigate around a virtual highway with oth
 ## Steps
 #### Note, following steps describe the workflow here to drive the car(ego vehicle) along the highway. These same steps are also embedded as comments into the code's relevant position , mostly in main.cpp file
 
-### 1.
-    Create N_SAMPLES=(25 for this demonstration) predictions of end stats (final s, final velocity ) for the non-ego vehicles for a duration of 25*0.02 = 0.5 seconds This is done in main.cpp,
-    function get_nonego_cars_predictions  
+### 1.  
+Create  __N_SAMPLES__=(25 for this demonstration) predictions of end stats (final s, final velocity ) for the non-ego vehicles for a duration of 25*0.02 = 0.5 seconds This is done in main.cpp, function get_nonego_cars_predictions.
+
       
 #### Later this predicted data will be used to generate possible jerk minimized trajectories for this ego vehicle and a number of cost functions will be engaged to find the best optimal path for a given future duration(0.5 second in this excercise). From this optimal path the calculated reference velocity and intended lane will feed into spline to derive a smooth 50 points of the desired trajectory polynomial for the ego vehicle to travel
 
