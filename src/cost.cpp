@@ -9,18 +9,25 @@
 /*
  * Utlity cost functions
  */
+
+/*
+ * logistic
+ *
+ * A function that returns a value between 0 and 1 for x in the 
+ * range[0, infinity] and 
+ * - 1 to 1 for x in the range[-infinity, infinity]. 
+ *   Useful for cost functions.
+ */
 double
 logistic (double x)
 {
-    /*
-     * A function that returns a value between 0 and 1 for x in the 
-     * range[0, infinity] and 
-     * - 1 to 1 for x in the range[-infinity, infinity]. 
-     *   Useful for cost functions.
-     */
   return 2.0/(1 + exp(-x)) - 1.0;
 }
 
+/*
+ * nearest_approach
+ *
+ */
 double 
 nearest_approach (vector<double> const &s_traj, vector<double> const &d_traj,
                   vector<vector<double>> const &prediction)
@@ -37,16 +44,18 @@ nearest_approach (vector<double> const &s_traj, vector<double> const &d_traj,
   return closest_distance;
 }
 
+/*
+ * nearest_approach_to_any_vehicle
+ *
+ * Calculates the closest distance to any vehicle for the given trajectory.
+ */
 double
 nearest_approach_to_any_vehicle (vector<double> const &s_traj,
                                  vector<double> const &d_traj,
                          map<int, vector<vector<double>>> const &predictions)
 {
-  
-    /*
-     * Calculates the closest distance to any vehicle for the given trajectory.
-     */
     double closest = 999999;
+    
     for (auto prediction : predictions) {
         double current_dist = nearest_approach(s_traj, d_traj,
                                                prediction.second);
@@ -79,29 +88,31 @@ collision_cost (vector<double> const &s_traj, vector<double> const &d_traj,
     }
 }
 
+/*
+ * buffer_cost
+ *
+ * Penalizes getting close to other vehicles.
+ */
 double
 buffer_cost (vector<double> const &s_traj, vector<double> const &d_traj,
              map<int,vector<vector<double>>> const &predictions)
 {
-  
-    /*
-     * Penalizes getting close to other vehicles.
-     */
     double nearest = nearest_approach_to_any_vehicle(s_traj, d_traj,
                                                      predictions);
     return logistic(2 * VEHICLE_RADIUS / nearest);
 }
 
+/*
+ * nearest_approach_to_any_vehicle_in_lane
+ *
+ * Determines the nearest the vehicle comes to any other vehicle
+ * throughout a trajectory
+ */
 double 
 nearest_approach_to_any_vehicle_in_lane (vector<double> s_traj,
                                          vector<double> d_traj, 
                               map<int, vector<vector<double>>> predictions)
 {
-    
-    /*
-     * Determines the nearest the vehicle comes to any other vehicle
-     * throughout a trajectory
-     */
     double closest = 999999;
     for (auto prediction : predictions) {
         double my_final_d = d_traj[d_traj.size() - 1];
@@ -120,24 +131,27 @@ nearest_approach_to_any_vehicle_in_lane (vector<double> s_traj,
     return closest;
 }
 
+/*
+ * Penalizes getting close to other vehicles. 
+ *
+ */
 double 
 in_lane_buffer_cost (vector<double> s_traj, vector<double> d_traj, map<int,
                      vector<vector<double>>> predictions) 
 {
-  /*
-   * Penalizes getting close to other vehicles.
-   */
   double nearest = nearest_approach_to_any_vehicle_in_lane(s_traj, d_traj,
                                                              predictions);
   return logistic(2 * VEHICLE_RADIUS / nearest);
 }
 
+/*
+ * not_middle_lane_cost
+ *
+ * penalize not shooting for middle lane (d = 6)
+ */
 double
 not_middle_lane_cost (vector<double> d_traj) 
 {
-  /*
-   * penalize not shooting for middle lane (d = 6)
-   */
   double end_d = d_traj[d_traj.size()-1];
   return logistic(pow(end_d-6, 2));
 }
@@ -161,12 +175,14 @@ differentiate (vector<double> traj)
   return time_derivatives;
 }
 
+/*
+ * efficiency_cost
+ *
+ * Rewards high average speeds.
+ */
 double
 efficiency_cost (vector<double> s_traj)
 {
-    /*
-     * Rewards high average speeds.
-     */
     vector<double> s_dot_traj = differentiate(s_traj);
     double final_s_dot, total = 0;
     final_s_dot = s_dot_traj[s_dot_traj.size() - 1];
@@ -177,14 +193,12 @@ efficiency_cost (vector<double> s_traj)
 /*
  * max_jerk_cost
  *
+ * Penalize exceeding MAX_JERKS
  */
 double 
 max_jerk_cost (vector<double> trajectory)
 {
   
-    /*
-     * Penalize exceeding MAX_JERKS
-     */
     vector<double> s_velocity = differentiate(trajectory);
     vector<double> s_acceleration = differentiate(s_velocity);
     vector<double> s_jerks = differentiate(s_acceleration);
@@ -198,6 +212,12 @@ max_jerk_cost (vector<double> trajectory)
     return 0;
 }
 
+/*
+ * calculate_all_cost
+ *
+ * Calculate the overall cost(in logitudinal and in lateral direction)
+ * for a given trajectory
+ */
 double
 calculate_all_cost(vector<double> const &s_traj, vector<double> const &d_traj,
                    map<int, vector<vector<double>>> const &predictions)

@@ -178,6 +178,10 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
      */
     int lane = 1;
 
+    /*
+     * starting waypoints to send for this distance
+     */
+    double trajectory_distance = 0;
 
 /*
  * get_nonego_cars_predictions
@@ -223,17 +227,15 @@ int main() {
     float       target_speed = SPEED_LIMIT ;
     int         init_lane = 1;
     int         first_pass = 0;
-    float       max_acceleration = 2 /* MAX_ACCELERATION */ ;
     car_state_e initial_state = CS; 
     float       distance_to_goal = 6945.554;
-    int         available_lane = 3;
 
     /*
      * configure the ego vehicle with initial data
      */
-     ego_car.configure(target_speed, init_lane, first_pass, max_acceleration,
-                       initial_state, distance_to_goal, available_lane);
-     ego_car.emergency_stop = 0;
+     ego_car.configure(target_speed, init_lane, first_pass, initial_state,
+                        distance_to_goal);
+
 
   // Load up map values for waypoint's x,y,s and d normalized normal vectors
   vector<double> map_waypoints_x;
@@ -269,9 +271,6 @@ int main() {
   	map_waypoints_dy.push_back(d_y);
   }
 
-
-  // Have a reference velocity to target
-  //double ref_vel = 49.5; //mph
 
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
@@ -385,7 +384,7 @@ int main() {
             }
 
             /*
-             * set ego's position
+             * set ego's position based on localization Data
              */
             ego_car.tj.s = car_s;
              
@@ -435,6 +434,7 @@ int main() {
             double                  min_cost = 999999;
             car_state_e             best_state;
             vector<vector<double>>  best_traj, best_end_state;
+            float                   best_end_s;
             long                    time_in_future;
 
             /*
@@ -517,6 +517,7 @@ int main() {
                     best_end_state = ego_predicted_final_states;
                     best_lane = best_end_state[1][0]/4; //intended_lane;
                     best_ref_velocity = best_end_state[0][1];
+                    best_end_s = best_end_state[0][0];
 
                     ref_vel = best_ref_velocity; 
                     ego_car.state = states[i];
@@ -524,15 +525,37 @@ int main() {
 
             } // for each state i.e. KL. LCL etc.
 
+            /*
+             * 9.
+             * In the loop above for all the possible states, the predicted
+             * optimal lane and velocity and end state have selected based
+             * on different cost criteria such as minimal collision, jerk,
+             * close to inline and other near around vehicle.
+             *
+             * Now do some sanity checking
+             *  a) if this predicted lane is within allowed drivable space 
+             *  b) Or we need to do an emergency stop based on the 
+             *     predicted reference velocity i.e. if the velocity is equal
+             *     to 0
+             */
+            if (best_lane >= LEFT_MOST_LANE && best_lane < TOTAL_AVAILABLE_LANE
+                    && best_lane != lane ) {
+                    cout << "==>> A Lane change from: "<< lane << " to: "
+                         <<best_lane<<" is suggested"<<endl;
 
-            if (best_lane >= 0 && best_lane < 3 && best_lane != lane ) {
-                cout<< "==>> A Lane change from: "<< lane << " to: "<<best_lane;
-                cout<<" is suggested"<<endl;
+                if (car_s > STARTING_RAMPUP_DISTANCE || 
+                                                ego_car.first_pass > 0) {
 
-                if (car_s > 200 || ego_car.first_pass > 0) {
                     lane = best_lane;
                     ego_car.first_pass = 1;
                 } else {
+                    
+                    /*
+                     * if ego has not crossed the STARTING_RAMPUP_DISTANCE
+                     * yet and this is the first pass (the track did not
+                     * wraparound yet) then do not change current lane yet
+                     * let the car ramp-up a bit.
+                     */
                    
                     /*
                      * keep current lane
@@ -542,8 +565,9 @@ int main() {
                     /*
                      * we just started, stay on same lane for few meters
                      */
-                    cout << "staying in same lane for next "<< (200 - car_s);
-                    cout << " meter to avoid any collision until the car ";
+                    cout << " staying in same lane for next "<<
+                                            (200 - car_s)<<" meter"<<endl;
+                    cout << " to avoid any collision until the car ";
                     cout << " gearup the desired speed"<<endl;
                 }
             }
@@ -551,33 +575,58 @@ int main() {
             vector<double> next_x_vals;
             vector<double> next_y_vals;
  
+            trajectory_distance = TRAJECTORY_DISTANCE;
+
             if (ref_vel == 0.0) {
-                cout<< "Holding Emergency Break! Ignore Jerk"<<endl;
-                //next_x_vals.push_back(prev_car_x);
-                next_x_vals.push_back(0);
-                //next_y_vals.push_back(prev_car_y);
-                next_y_vals.push_back(0);
-            } else {
+                cout<<" >>Holding Emergency Brake!! Ignoring Jerk"<<endl;
+
+                /*
+                 * No need for a 30m trajectory just the minimum to
+                 * reach best_end_s before collision
+                 */
+                trajectory_distance = best_end_s;
+                ref_vel = (ego_car.tj.s_dot + ref_vel)/2;
+                cout <<" >>Ego current location ["<<car_s<< "] meter"<<endl;
+                cout <<" >>need to be stopped at ["<<best_end_s <<"] meter"<<endl;
+                cout <<" >>Final Velocity ["<<ref_vel<<"]"<<endl;
+            }
 
             /*
-             * In Frenet add evenly 30m spaced points ahead of the starting
-             * reference
+             * 10.
+             *
+             * Now use spline to fit the polynomial of this trajectory
+             * smoothly.
              */
-            vector<double> next_wp0 = getXY(car_s + 30, (2 + 4*lane), 
-                            map_waypoints_s, map_waypoints_x, map_waypoints_y);
-            vector<double> next_wp1 = getXY(car_s + 60, (2 + 4*lane),
-                            map_waypoints_s, map_waypoints_x, map_waypoints_y);
-            vector<double> next_wp2 = getXY(car_s + 90, (2 + 4*lane), 
-                            map_waypoints_s, map_waypoints_x, map_waypoints_y);
 
-          	ptsx.push_back(next_wp0[0]);
-          	ptsx.push_back(next_wp1[0]);
-          	ptsx.push_back(next_wp2[0]);
+            /*
+             * In Frenet add evenly "trajectory_distance" spaced points
+             * ahead of the starting reference
+             */
+            vector<double> next_wp0 = getXY(car_s + trajectory_distance,
+                                            (2 + 4*lane), map_waypoints_s,
+                                            map_waypoints_x, map_waypoints_y);
             
+          	ptsx.push_back(next_wp0[0]);
           	ptsy.push_back(next_wp0[1]);
-          	ptsy.push_back(next_wp1[1]);
-          	ptsy.push_back(next_wp2[1]);
 
+            
+            if (trajectory_distance >= TRAJECTORY_DISTANCE) {
+                vector<double> next_wp1 = getXY(car_s + 2*trajectory_distance,
+                                            (2 + 4*lane), map_waypoints_s,
+                                            map_waypoints_x, map_waypoints_y);
+
+                vector<double> next_wp2 = getXY(car_s + 3*trajectory_distance,
+                                        (2 + 4*lane), map_waypoints_s,
+                                            map_waypoints_x, map_waypoints_y);
+            
+          	    ptsx.push_back(next_wp1[0]);
+                ptsy.push_back(next_wp1[1]);
+
+                ptsx.push_back(next_wp2[0]);
+          	    ptsy.push_back(next_wp2[1]);
+ 
+            }
+          	
             /*
              * Convert the axis from map-coordinate to car-coordinate. We are
              * looking from the car front windshield, making things easy
@@ -606,7 +655,17 @@ int main() {
             tk::spline s;
 
             /*
-             * set (x,y ) points to the spline
+             * sort the data point in case any anomaly specially
+             * during emergency stop with in very short distance and
+             * try to fit 50 points with high enough velocity towards
+             * zero.
+             * This should avoid any unwanted assert from spline
+             * sort(ptsx.begin(), ptsx.end());
+             * sort(ptsy.begin(), ptsy.end());
+             */
+            
+            /*
+             * set (x,y ) points to the spline along the trajectory
              */
             s.set_points(ptsx, ptsy);
  
@@ -622,7 +681,7 @@ int main() {
              * Calculate how to break up spline points so that we can travel
              * at our desired reference velocity
              */
-            double target_x = 30.0;
+            double target_x = trajectory_distance;
             double target_y = s(target_x);
             double target_dist = sqrt(target_x*target_x + target_y*target_y);
             double x_add_on = 0;
@@ -669,8 +728,6 @@ int main() {
                 next_y_vals.push_back(y_point);
 
             }
-
-            } // end of brake
 
             /*
              * define a path made up of (x,y) points that the car will

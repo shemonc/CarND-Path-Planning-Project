@@ -129,9 +129,8 @@ Vehicle::successor_states()
 /*
  * get_target_lane
  * 
- * Translate state into lane number.
- * i.e. if currently on lan 0 and state is LCR,
- * target lane will be 1 ect.
+ * Translate state into lane number. i.e. if currently on lane 0 and
+ * state is LCR, target lane will be 1 etc.
  */
 int 
 Vehicle::get_target_lane (car_state_e state)
@@ -156,6 +155,19 @@ Vehicle::get_target_lane (car_state_e state)
     return target_lane;
 }
 
+/*
+ * get_inlane_vehicle_end_states
+ *
+ * Given a lane and a hash map of predicted end states of all non-ego vehicle
+ * find the predicted end states of the closest non-ego vehicle that is in the
+ * same lane as the ego vehcle is. 
+ *
+ * @[in] lane: intended lane to find the closest non-ego vehicle
+ * @[in] predictions: predictions of end states of other vehicle
+ * @[out] {end_s, end_s_dot}: return a vector of end states of closest
+ *        non-ego vehicle
+ *
+ */
 vector<float>
 Vehicle::get_inlane_vehicle_end_states (const int lane,
                                  map<int, vector<vector<double>>> &predictions)
@@ -231,45 +243,29 @@ Vehicle::get_predicted_end_states (car_state_e state, int target_lane,
         s_diff = car_in_front_s - end_s;
         if (s_diff < TRAJECTORY_DISTANCE) {
             
-            end_sd -= 0.224*2 ; //car_in_front_velocity;
+            end_sd -= 0.224*2 ;
             end_s = position_at(duration, end_sd);
 
         }
         
         /*
          * re-evaluate the distance again to make sure
-         * front vehicle is not with in safety distance
+         * front vehicle is not with in safety distance even
+         * after the above twice velocity reduction
          */
         s_diff = car_in_front_s - end_s;
         if (s_diff < SAFETY_DISTANCE) {
-        
+ 
             /*
              * too close, slow down
              */
             cout<<" Vehicle ahead too close !"<<endl;
-            //end_sd -= 0.224;
-            emergency_stop += 1;
-            if (emergency_stop > 1) {
-                end_sd = 0;
-                cout << " Emergency Stop is requested"<<endl;
-            } else {
-                end_sd = car_in_front_velocity;
-            }
+            end_sd = 0;
+            cout << " Emergency Stop is requested"<<endl;
+            end_s = fabs(car_in_front_s - 5*VEHICLE_RADIUS);
 
-            end_s = position_at(duration, end_sd);
-        } else {
-            emergency_stop = 0;
         }
     }
-
-#if 0
-    s_diff = car_in_front_s - end_s;
-    if (s_diff > 0 &&  s_diff < 3 ) {
-        cout << "Less than a meter, Stop! "<<endl;
-        //RESET coordinate
-        end_sd = 0.01;
-    }
-#endif
 
     return {{end_s, end_sd, end_sdd}, {end_d, end_dd, end_ddd}};
 }
@@ -354,18 +350,20 @@ Vehicle::position_at (long duration, float end_velocity)
  */
 void 
 Vehicle::configure(float target_speed, int lane, int first_pass,
-                   float max_accel, car_state_e state, float distance_to_goal,
-                   int available_lane)
+                   car_state_e state, float distance_to_goal)
 {
     this->target_speed = target_speed;
     this->lane = lane;
     this->first_pass = first_pass;
-    max_acceleration = max_accel;
     this->state = state;
-    this->lanes_available = available_lane;
     this->goal_s = distance_to_goal;
 }
 
+/*
+ * set_trajectory_param
+ *
+ * set the trajectory parameter of a given vehicle object 
+ */
 void 
 Vehicle::set_trajectory_param(float s, float s_d, float s_dd, 
                               float d, float d_d, float d_dd)
